@@ -2,6 +2,7 @@
 #include <string.h>
 #include "reStates.h"
 #include "rLog.h"
+#include "reEsp32.h"
 #include "esp_ota_ops.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
@@ -66,7 +67,7 @@ void otaTaskExec(void *pvParameters)
     if (err == ESP_OK) {
       vTaskDelay(pdMS_TO_TICKS(CONFIG_OTA_DELAY));
       rlog_i(logTAG, "******************* Restart system! *******************");
-      esp_restart();
+      espRestart(RR_OTA);
     };
   };
 
