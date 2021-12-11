@@ -1,12 +1,13 @@
 #include "reOTA.h"
 #include <string.h>
-#include "reStates.h"
+#include "reEvents.h"
 #include "rLog.h"
+#include "reEsp32.h"
 #include "esp_ota_ops.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
 #include "project_config.h"
-#include "def_mqtt_ota.h"
+#include "def_consts.h"
 #if CONFIG_TELEGRAM_ENABLE
 #include "reTgSend.h"
 #endif // CONFIG_TELEGRAM_ENABLE
@@ -27,11 +28,14 @@ void otaTaskExec(void *pvParameters)
       tgSend(CONFIG_NOTIFY_TELEGRAM_ALERT_OTA, CONFIG_TELEGRAM_DEVICE, CONFIG_MESSAGE_TG_OTA, otaSource);
     #endif // CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
 
+    // Notify other tasks to suspend activities
+    eventLoopPostSystem(RE_SYS_OTA, RE_SYS_SET);
+    vTaskDelay(pdMS_TO_TICKS(CONFIG_OTA_DELAY));
+
     esp_http_client_config_t cfgOTA;
 
     uint8_t tryUpdate = 0;
     esp_err_t err = ESP_OK;
-    ledSysOn(true);
     do {
       tryUpdate++;
       rlog_i(logTAG, "Start of firmware upgrade from \"%s\", attempt %d", otaSource, tryUpdate);
@@ -61,27 +65,35 @@ void otaTaskExec(void *pvParameters)
     #endif // CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
 
     if (otaSource) free(otaSource);
-    ledSysOff(true);
-
+    
     if (err == ESP_OK) {
       vTaskDelay(pdMS_TO_TICKS(CONFIG_OTA_DELAY));
       rlog_i(logTAG, "******************* Restart system! *******************");
-      esp_restart();
+      _otaTask = nullptr;
+      espRestart(RR_OTA);
     };
   };
 
-  rlog_i(logTAG, "Task [ %s ] has been deleted", otaTaskName);
-  vTaskDelete(nullptr);
+  eventLoopPostSystem(RE_SYS_OTA, RE_SYS_CLEAR);
+
   _otaTask = nullptr;
+  vTaskDelete(nullptr);
+  rlog_i(logTAG, "Task [ %s ] has been deleted", otaTaskName);
 }
 
 void otaStart(char *otaSource)
 {
-  xTaskCreatePinnedToCore(otaTaskExec, otaTaskName, CONFIG_OTA_TASK_STACK_SIZE, (void*)otaSource, CONFIG_OTA_TASK_PRIORITY, &_otaTask, CONFIG_OTA_TASK_CORE);
-  if (_otaTask) {
-    rloga_i("Task [ %s ] has been successfully created and started", otaTaskName);
-  }
-  else {
-    rloga_e("Failed to create a task for OTA update!");
+  if (_otaTask == nullptr) {
+    xTaskCreatePinnedToCore(otaTaskExec, otaTaskName, CONFIG_OTA_TASK_STACK_SIZE, (void*)otaSource, CONFIG_OTA_TASK_PRIORITY, &_otaTask, CONFIG_OTA_TASK_CORE);
+    if (_otaTask) {
+      rloga_i("Task [ %s ] has been successfully created and started", otaTaskName);
+    }
+    else {
+      rloga_e("Failed to create a task for OTA update!");
+      if (otaSource) free(otaSource);
+    };
+  } else {
+    rloga_e("OTA update has already started!");
+    if (otaSource) free(otaSource);
   };
 }
