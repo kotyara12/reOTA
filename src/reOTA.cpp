@@ -65,18 +65,17 @@ void otaTaskExec(void *pvParameters)
     #endif // CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
 
     if (otaSource) free(otaSource);
+    _otaTask = nullptr;
     
     if (err == ESP_OK) {
       vTaskDelay(pdMS_TO_TICKS(CONFIG_OTA_DELAY));
       rlog_i(logTAG, "******************* Restart system! *******************");
-      _otaTask = nullptr;
       espRestart(RR_OTA);
     };
   };
 
   eventLoopPostSystem(RE_SYS_OTA, RE_SYS_CLEAR);
 
-  _otaTask = nullptr;
   vTaskDelete(nullptr);
   rlog_i(logTAG, "Task [ %s ] has been deleted", otaTaskName);
 }
