@@ -4,6 +4,7 @@
 #include "rLog.h"
 #include "reEsp32.h"
 #include "esp_ota_ops.h"
+#include "esp_timer.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
 #include "project_config.h"
@@ -19,6 +20,11 @@ static TaskHandle_t _otaTask = nullptr;
 extern const char ota_pem_start[] asm(CONFIG_OTA_PEM_START);
 extern const char ota_pem_end[]   asm(CONFIG_OTA_PEM_END); 
 
+static void otaTaskWatchdog(void* arg)
+{
+  espRestart(RR_OTA_TIMEOUT); 
+}
+
 void otaTaskExec(void *pvParameters)
 {
   if (pvParameters) {
@@ -31,6 +37,16 @@ void otaTaskExec(void *pvParameters)
     // Notify other tasks to suspend activities
     eventLoopPostSystem(RE_SYS_OTA, RE_SYS_SET);
     vTaskDelay(pdMS_TO_TICKS(CONFIG_OTA_DELAY));
+
+    // Start watchdog timer
+    esp_timer_create_args_t cfgWatchdog;
+    esp_timer_handle_t hWatchdog;
+    memset(&cfgWatchdog, 0, sizeof(cfgWatchdog));
+    cfgWatchdog.callback = otaTaskWatchdog;
+    cfgWatchdog.name = "ota_watchdog";
+    if (esp_timer_create(&cfgWatchdog, &hWatchdog) == ESP_OK) {
+      esp_timer_start_once(hWatchdog, CONFIG_OTA_WATCHDOG * 1000000);
+    };
 
     esp_http_client_config_t cfgOTA;
 
@@ -64,6 +80,15 @@ void otaTaskExec(void *pvParameters)
     };
     #endif // CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
 
+    // Stop timer
+    if (hWatchdog) {
+      if (esp_timer_is_active(hWatchdog)) {
+        esp_timer_stop(hWatchdog);
+      }
+      esp_timer_delete(hWatchdog);
+    };
+    
+    // Free resources
     if (otaSource) free(otaSource);
     _otaTask = nullptr;
     
