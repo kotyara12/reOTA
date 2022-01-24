@@ -3,6 +3,7 @@
 #include "reEvents.h"
 #include "rLog.h"
 #include "reEsp32.h"
+#include "rStrings.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
 #include "esp_http_client.h"
@@ -22,7 +23,7 @@ extern const char ota_pem_end[]   asm(CONFIG_OTA_PEM_END);
 
 static void otaTaskWatchdog(void* arg)
 {
-  espRestart(RR_OTA_TIMEOUT); 
+  espRestart(RR_OTA_TIMEOUT, 0); 
 }
 
 void otaTaskExec(void *pvParameters)
@@ -72,6 +73,9 @@ void otaTaskExec(void *pvParameters)
       };
     } while ((err != ESP_OK) && (tryUpdate < CONFIG_OTA_ATTEMPTS));
 
+    // Notify other tasks to restore activities
+    eventLoopPostSystem(RE_SYS_OTA, RE_SYS_CLEAR);
+
     #if CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
     if (err == ESP_OK) {
       tgSend(CONFIG_NOTIFY_TELEGRAM_ALERT_OTA, CONFIG_TELEGRAM_DEVICE, CONFIG_MESSAGE_TG_OTA_OK, err);
@@ -80,6 +84,10 @@ void otaTaskExec(void *pvParameters)
     };
     #endif // CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
 
+    // Free resources
+    if (otaSource) free(otaSource);
+    _otaTask = nullptr;
+    
     // Stop timer
     if (hWatchdog) {
       if (esp_timer_is_active(hWatchdog)) {
@@ -87,15 +95,9 @@ void otaTaskExec(void *pvParameters)
       }
       esp_timer_delete(hWatchdog);
     };
-    
-    // Free resources
-    if (otaSource) free(otaSource);
-    _otaTask = nullptr;
-    
+
     if (err == ESP_OK) {
-      vTaskDelay(pdMS_TO_TICKS(CONFIG_OTA_DELAY));
-      rlog_i(logTAG, "******************* Restart system! *******************");
-      espRestart(RR_OTA);
+      espRestart(RR_OTA, CONFIG_OTA_DELAY);
     };
   };
 
@@ -107,17 +109,21 @@ void otaTaskExec(void *pvParameters)
 
 void otaStart(char *otaSource)
 {
-  if (_otaTask == nullptr) {
-    xTaskCreatePinnedToCore(otaTaskExec, otaTaskName, CONFIG_OTA_TASK_STACK_SIZE, (void*)otaSource, CONFIG_OTA_TASK_PRIORITY, &_otaTask, CONFIG_OTA_TASK_CORE);
-    if (_otaTask) {
-      rloga_i("Task [ %s ] has been successfully created and started", otaTaskName);
-    }
-    else {
-      rloga_e("Failed to create a task for OTA update!");
-      if (otaSource) free(otaSource);
+  if (otaSource) {
+    if (_otaTask == nullptr) {
+      xTaskCreatePinnedToCore(otaTaskExec, otaTaskName, CONFIG_OTA_TASK_STACK_SIZE, (void*)otaSource, CONFIG_OTA_TASK_PRIORITY, &_otaTask, CONFIG_OTA_TASK_CORE);
+      if (_otaTask) {
+        rloga_i("Task [ %s ] has been successfully created and started", otaTaskName);
+      }
+      else {
+        rloga_e("Failed to create a task for OTA update!");
+        free(otaSource);
+      };
+    } else {
+      rloga_e("OTA update has already started!");
+      free(otaSource);
     };
   } else {
-    rloga_e("OTA update has already started!");
-    if (otaSource) free(otaSource);
+    rlog_e(logTAG, "Update source not specified");
   };
 }
