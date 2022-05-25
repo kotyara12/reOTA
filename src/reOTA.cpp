@@ -18,9 +18,6 @@ static const char* logTAG = "OTA";
 static const char* otaTaskName = "ota";
 static TaskHandle_t _otaTask = nullptr;
 
-extern const char ota_pem_start[] asm(CONFIG_OTA_PEM_START);
-extern const char ota_pem_end[]   asm(CONFIG_OTA_PEM_END); 
-
 static void otaTaskWatchdog(void* arg)
 {
   espRestart(RR_OTA_TIMEOUT, 0); 
@@ -32,7 +29,8 @@ void otaTaskExec(void *pvParameters)
     char* otaSource = (char*)pvParameters;
 
     #if CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
-      tgSend(TG_SERVICE, CONFIG_NOTIFY_TELEGRAM_ALERT_OTA, CONFIG_TELEGRAM_DEVICE, CONFIG_MESSAGE_TG_OTA, otaSource);
+      tgSend(MK_SERVICE, CONFIG_NOTIFY_TELEGRAM_OTA_PRIORITY, CONFIG_NOTIFY_TELEGRAM_ALERT_OTA, CONFIG_TELEGRAM_DEVICE, 
+        CONFIG_MESSAGE_TG_OTA, otaSource);
     #endif // CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
 
     // Notify other tasks to suspend activities
@@ -59,8 +57,7 @@ void otaTaskExec(void *pvParameters)
       
       memset(&cfgOTA, 0, sizeof(cfgOTA));
       cfgOTA.skip_cert_common_name_check = false;
-      cfgOTA.use_global_ca_store = false;
-      cfgOTA.cert_pem = (char*)ota_pem_start;
+      cfgOTA.use_global_ca_store = true;
       cfgOTA.url = otaSource;
       cfgOTA.is_async = false;
 
@@ -78,9 +75,11 @@ void otaTaskExec(void *pvParameters)
 
     #if CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
     if (err == ESP_OK) {
-      tgSend(TG_SERVICE, CONFIG_NOTIFY_TELEGRAM_ALERT_OTA, CONFIG_TELEGRAM_DEVICE, CONFIG_MESSAGE_TG_OTA_OK, err);
+      tgSend(MK_SERVICE, CONFIG_NOTIFY_TELEGRAM_OTA_PRIORITY, CONFIG_NOTIFY_TELEGRAM_ALERT_OTA, CONFIG_TELEGRAM_DEVICE, 
+        CONFIG_MESSAGE_TG_OTA_OK, err);
     } else {
-      tgSend(TG_SERVICE, CONFIG_NOTIFY_TELEGRAM_ALERT_OTA, CONFIG_TELEGRAM_DEVICE, CONFIG_MESSAGE_TG_OTA_FAILED, err);
+      tgSend(MK_SERVICE, CONFIG_NOTIFY_TELEGRAM_OTA_PRIORITY, CONFIG_NOTIFY_TELEGRAM_ALERT_OTA, CONFIG_TELEGRAM_DEVICE, 
+        CONFIG_MESSAGE_TG_OTA_FAILED, err);
     };
     #endif // CONFIG_TELEGRAM_ENABLE && CONFIG_NOTIFY_TELEGRAM_OTA
 
