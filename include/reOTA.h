@@ -9,6 +9,17 @@
 #ifndef __RE_OTA_H__
 #define __RE_OTA_H__
 
+#include <string.h>
+#include "project_config.h"
+#include "def_consts.h"
+#include "rLog.h"
+#include "rStrings.h"
+#include "reEsp32.h"
+#include "reEvents.h"
+#if CONFIG_TELEGRAM_ENABLE
+#include "reTgSend.h"
+#endif // CONFIG_TELEGRAM_ENABLE
+
 #ifdef __cplusplus
 extern "C" {
 #endif

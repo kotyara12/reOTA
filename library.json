@@ -1,0 +1,17 @@
+{
+  "name": "reOTA",
+  "version": "1.3.0",
+  "description": "OTA update in the context of a specially created task",
+  "keywords": "ota",
+  "authors":
+  [
+    {
+      "name": "Alexander Razzhivin",
+      "email": "kotyara12@yandex.ru",
+      "url": "https://kotyara12.ru"
+    }
+  ],
+  "license": "MIT",
+  "frameworks": ["arduino", "espidf"],
+  "platforms": ["espressif32"]
+}

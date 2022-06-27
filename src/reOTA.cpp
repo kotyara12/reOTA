@@ -1,27 +1,25 @@
 #include "reOTA.h"
-#include <string.h>
-#include "reEvents.h"
-#include "rLog.h"
-#include "reEsp32.h"
-#include "rStrings.h"
-#include "esp_ota_ops.h"
 #include "esp_timer.h"
+#include "esp_ota_ops.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
-#include "project_config.h"
-#include "def_consts.h"
-#if CONFIG_TELEGRAM_ENABLE
-#include "reTgSend.h"
-#endif // CONFIG_TELEGRAM_ENABLE
 
 static const char* logTAG = "OTA";
 static const char* otaTaskName = "ota";
 static TaskHandle_t _otaTask = nullptr;
 
-static void otaTaskWatchdog(void* arg)
-{
-  espRestart(RR_OTA_TIMEOUT, 0); 
-}
+#ifndef CONFIG_OTA_PEM_STORAGE
+  #define CONFIG_OTA_PEM_STORAGE TLS_CERT_BUFFER
+#endif // CONFIG_OTA_PEM_STORAGE
+
+#if CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUFFER
+  extern const char ota_pem_start[]  asm(CONFIG_OTA_PEM_START);
+  extern const char ota_pem_end[]    asm(CONFIG_OTA_PEM_END); 
+#endif // CONFIG_OTA_PEM_STORAGE
+
+#if CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUNDLE
+  #include "esp_crt_bundle.h"
+#endif // CONFIG_OTA_PEM_STORAGE
 
 void otaTaskExec(void *pvParameters)
 {
@@ -38,17 +36,10 @@ void otaTaskExec(void *pvParameters)
     vTaskDelay(pdMS_TO_TICKS(CONFIG_OTA_DELAY));
 
     // Start watchdog timer
-    esp_timer_create_args_t cfgWatchdog;
-    esp_timer_handle_t hWatchdog;
-    memset(&cfgWatchdog, 0, sizeof(cfgWatchdog));
-    cfgWatchdog.callback = otaTaskWatchdog;
-    cfgWatchdog.name = "ota_watchdog";
-    if (esp_timer_create(&cfgWatchdog, &hWatchdog) == ESP_OK) {
-      esp_timer_start_once(hWatchdog, CONFIG_OTA_WATCHDOG * 1000000);
-    };
+    static re_restart_timer_t otaTimer;
+    espRestartTimerStartS(&otaTimer, RR_OTA_TIMEOUT, CONFIG_OTA_WATCHDOG, true);
 
     esp_http_client_config_t cfgOTA;
-
     uint8_t tryUpdate = 0;
     esp_err_t err = ESP_OK;
     do {
@@ -56,9 +47,17 @@ void otaTaskExec(void *pvParameters)
       rlog_i(logTAG, "Start of firmware upgrade from \"%s\", attempt %d", otaSource, tryUpdate);
       
       memset(&cfgOTA, 0, sizeof(cfgOTA));
-      cfgOTA.skip_cert_common_name_check = false;
-      cfgOTA.use_global_ca_store = true;
       cfgOTA.url = otaSource;
+      cfgOTA.skip_cert_common_name_check = false;
+      #if CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUFFER
+        cfgOTA.use_global_ca_store = false;
+        cfgOTA.cert_pem = ota_pem_start;
+      #elif CONFIG_OTA_PEM_STORAGE == TLS_CERT_GLOBAL
+        cfgOTA.use_global_ca_store = true;
+      #elif CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUNDLE
+        cfgOTA.use_global_ca_store = false;
+        cfgOTA.crt_bundle_attach = esp_crt_bundle_attach;
+      #endif // CONFIG_OTA_PEM_STORAGE
       cfgOTA.is_async = false;
 
       err = esp_https_ota(&cfgOTA);
@@ -88,15 +87,10 @@ void otaTaskExec(void *pvParameters)
     _otaTask = nullptr;
     
     // Stop timer
-    if (hWatchdog) {
-      if (esp_timer_is_active(hWatchdog)) {
-        esp_timer_stop(hWatchdog);
-      }
-      esp_timer_delete(hWatchdog);
-    };
-
     if (err == ESP_OK) {
-      espRestart(RR_OTA, CONFIG_OTA_DELAY);
+      espRestartTimerStart(&otaTimer, RR_OTA, CONFIG_OTA_DELAY, true);
+    } else {
+      espRestartTimerFree(&otaTimer);
     };
   };
 
@@ -110,7 +104,7 @@ void otaStart(char *otaSource)
 {
   if (otaSource) {
     if (_otaTask == nullptr) {
-      xTaskCreatePinnedToCore(otaTaskExec, otaTaskName, CONFIG_OTA_TASK_STACK_SIZE, (void*)otaSource, CONFIG_OTA_TASK_PRIORITY, &_otaTask, CONFIG_OTA_TASK_CORE);
+      xTaskCreatePinnedToCore(otaTaskExec, otaTaskName, CONFIG_OTA_TASK_STACK_SIZE, (void*)otaSource, CONFIG_TASK_PRIORITY_OTA, &_otaTask, CONFIG_TASK_CORE_OTA);
       if (_otaTask) {
         rloga_i("Task [ %s ] has been successfully created and started", otaTaskName);
       }
