@@ -3,6 +3,7 @@
 #include "esp_ota_ops.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
+#include "mbedtls/ssl.h"
 
 static const char* logTAG = "OTA";
 static const char* otaTaskName = "ota";
@@ -15,10 +16,6 @@ static TaskHandle_t _otaTask = nullptr;
 #if CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUFFER
   extern const char ota_pem_start[]  asm(CONFIG_OTA_PEM_START);
   extern const char ota_pem_end[]    asm(CONFIG_OTA_PEM_END); 
-#endif // CONFIG_OTA_PEM_STORAGE
-
-#if CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUNDLE
-  #include "esp_crt_bundle.h"
 #endif // CONFIG_OTA_PEM_STORAGE
 
 void otaTaskExec(void *pvParameters)
