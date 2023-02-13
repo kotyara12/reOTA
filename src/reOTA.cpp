@@ -36,26 +36,28 @@ void otaTaskExec(void *pvParameters)
     static re_restart_timer_t otaTimer;
     espRestartTimerStartS(&otaTimer, RR_OTA_TIMEOUT, CONFIG_OTA_WATCHDOG, true);
 
-    esp_http_client_config_t cfgOTA;
+    esp_http_client_config_t cfgHTTPS;
+    esp_https_ota_config_t cfgOTA;
     uint8_t tryUpdate = 0;
     esp_err_t err = ESP_OK;
     do {
       tryUpdate++;
       rlog_i(logTAG, "Start of firmware upgrade from \"%s\", attempt %d", otaSource, tryUpdate);
       
+      memset(&cfgHTTPS, 0, sizeof(cfgHTTPS));
       memset(&cfgOTA, 0, sizeof(cfgOTA));
-      cfgOTA.url = otaSource;
-      cfgOTA.skip_cert_common_name_check = false;
+      cfgHTTPS.url = otaSource;
+      cfgHTTPS.skip_cert_common_name_check = false;
       #if CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUFFER
-        cfgOTA.use_global_ca_store = false;
-        cfgOTA.cert_pem = ota_pem_start;
+        cfgHTTPS.use_global_ca_store = false;
+        cfgHTTPS.cert_pem = ota_pem_start;
       #elif CONFIG_OTA_PEM_STORAGE == TLS_CERT_GLOBAL
-        cfgOTA.use_global_ca_store = true;
+        cfgHTTPS.use_global_ca_store = true;
       #elif CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUNDLE
-        cfgOTA.use_global_ca_store = false;
-        cfgOTA.crt_bundle_attach = esp_crt_bundle_attach;
+        cfgHTTPS.use_global_ca_store = false;
+        cfgHTTPS.crt_bundle_attach = esp_crt_bundle_attach;
       #endif // CONFIG_OTA_PEM_STORAGE
-      cfgOTA.is_async = false;
+      cfgOTA.http_config = &cfgHTTPS;
 
       err = esp_https_ota(&cfgOTA);
       if (err == ESP_OK) {
