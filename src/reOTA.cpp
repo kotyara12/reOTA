@@ -36,30 +36,39 @@ void otaTaskExec(void *pvParameters)
     static re_restart_timer_t otaTimer;
     espRestartTimerStartS(&otaTimer, RR_OTA_TIMEOUT, CONFIG_OTA_WATCHDOG, true);
 
+    // Configure HTTPS
     esp_http_client_config_t cfgHTTPS;
-    esp_https_ota_config_t cfgOTA;
+    memset(&cfgHTTPS, 0, sizeof(cfgHTTPS));
+    cfgHTTPS.url = otaSource;
+    cfgHTTPS.skip_cert_common_name_check = false;
+    #if CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUFFER
+      cfgHTTPS.use_global_ca_store = false;
+      cfgHTTPS.cert_pem = ota_pem_start;
+    #elif CONFIG_OTA_PEM_STORAGE == TLS_CERT_GLOBAL
+      cfgHTTPS.use_global_ca_store = true;
+    #elif CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUNDLE
+      cfgHTTPS.use_global_ca_store = false;
+      cfgHTTPS.crt_bundle_attach = esp_crt_bundle_attach;
+    #endif // CONFIG_OTA_PEM_STORAGE
+
+    // Configure OTA (only for ESP-IDF >= 5.0.0)
+    #if ESP_IDF_VERSION_MAJOR >= 5
+      esp_https_ota_config_t cfgOTA;
+      memset(&cfgOTA, 0, sizeof(cfgOTA));
+      cfgOTA.http_config = &cfgHTTPS;
+    #endif // ESP_IDF_VERSION_MAJOR
+
     uint8_t tryUpdate = 0;
     esp_err_t err = ESP_OK;
     do {
       tryUpdate++;
       rlog_i(logTAG, "Start of firmware upgrade from \"%s\", attempt %d", otaSource, tryUpdate);
       
-      memset(&cfgHTTPS, 0, sizeof(cfgHTTPS));
-      memset(&cfgOTA, 0, sizeof(cfgOTA));
-      cfgHTTPS.url = otaSource;
-      cfgHTTPS.skip_cert_common_name_check = false;
-      #if CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUFFER
-        cfgHTTPS.use_global_ca_store = false;
-        cfgHTTPS.cert_pem = ota_pem_start;
-      #elif CONFIG_OTA_PEM_STORAGE == TLS_CERT_GLOBAL
-        cfgHTTPS.use_global_ca_store = true;
-      #elif CONFIG_OTA_PEM_STORAGE == TLS_CERT_BUNDLE
-        cfgHTTPS.use_global_ca_store = false;
-        cfgHTTPS.crt_bundle_attach = esp_crt_bundle_attach;
-      #endif // CONFIG_OTA_PEM_STORAGE
-      cfgOTA.http_config = &cfgHTTPS;
-
-      err = esp_https_ota(&cfgOTA);
+      #if ESP_IDF_VERSION_MAJOR < 5
+        err = esp_https_ota(&cfgHTTPS);
+      #else
+        err = esp_https_ota(&cfgOTA);
+      #endif // ESP_IDF_VERSION_MAJOR
       if (err == ESP_OK) {
         rlog_i(logTAG, "Firmware upgrade completed!");
       } else {
